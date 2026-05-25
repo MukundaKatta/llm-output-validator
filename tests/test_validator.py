@@ -1,152 +1,200 @@
-"""Tests for OutputValidator core (aggregation, ordering, raise path)."""
+"""Tests for llm-output-validator."""
 
-from __future__ import annotations
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
 
 import pytest
-
-from llm_output_validator import (
-    OutputValidationError,
-    OutputValidator,
-    Rule,
-    RuleResult,
-    ValidationResult,
-    rules,
-)
+from llm_output_validator import Rule, ValidationError, ValidationResult, validate
 
 
-def _always_pass(name: str = "always_pass") -> Rule:
-    return Rule(name=name, check=lambda _t: RuleResult(True))
+TEXT = "Summary: The Eiffel Tower is in Paris. It was built in 1889."
 
 
-def _always_fail(name: str = "always_fail", msg: str = "nope") -> Rule:
-    return Rule(name=name, check=lambda _t: RuleResult(False, msg))
+# ---------------------------------------------------------------------------
+# validate() — inline kwargs
+# ---------------------------------------------------------------------------
 
-
-# ---- happy path / aggregation ----
-
-
-def test_all_rules_pass_yields_ok():
-    v = OutputValidator(
-        [
-            rules.length(min_chars=1),
-            rules.starts_with("H"),
-            rules.regex_must_match(r"world"),
-        ]
-    )
-    result = v.check("Hello world")
-    assert isinstance(result, ValidationResult)
+def test_all_pass():
+    result = validate(TEXT)
     assert result.ok is True
-    assert result.failed_rules == []
-    assert set(result.details.keys()) == {"length", "starts_with", "regex_must_match"}
-    assert all(d.passed for d in result.details.values())
+    assert result.rule_count == 0
 
-
-def test_single_failure_reports_just_that_rule():
-    v = OutputValidator(
-        [
-            rules.length(min_chars=1),
-            rules.starts_with("Z"),  # fails
-            rules.regex_must_match(r"world"),
-        ]
-    )
-    result = v.check("Hello world")
-    assert result.ok is False
-    assert result.failed_rules == ["starts_with"]
-    assert result.details["starts_with"].passed is False
-    assert result.details["length"].passed is True
-
-
-def test_multiple_failures_all_collected_in_declared_order():
-    v = OutputValidator(
-        [
-            _always_fail("first_fail", "msg1"),
-            _always_pass("middle_ok"),
-            _always_fail("last_fail", "msg2"),
-        ]
-    )
-    result = v.check("anything")
-    assert result.ok is False
-    assert result.failed_rules == ["first_fail", "last_fail"]
-    assert result.details["first_fail"].message == "msg1"
-    assert result.details["last_fail"].message == "msg2"
-
-
-def test_empty_rule_list_always_passes():
-    v = OutputValidator([])
-    result = v.check("anything")
+def test_must_contain_pass():
+    result = validate(TEXT, must_contain="Eiffel")
     assert result.ok is True
-    assert result.failed_rules == []
-    assert result.details == {}
+
+def test_must_contain_fail():
+    result = validate(TEXT, must_contain="Berlin")
+    assert result.ok is False
+
+def test_must_contain_case_insensitive():
+    result = validate(TEXT, must_contain="EIFFEL")
+    assert result.ok is True
+
+def test_must_contain_case_sensitive_fail():
+    result = validate(TEXT, must_contain="eiffel", case_sensitive=True)
+    assert result.ok is False
+
+def test_must_not_contain_pass():
+    result = validate(TEXT, must_not_contain="Berlin")
+    assert result.ok is True
+
+def test_must_not_contain_fail():
+    result = validate(TEXT, must_not_contain="Eiffel")
+    assert result.ok is False
+
+def test_min_length_pass():
+    result = validate(TEXT, min_length=10)
+    assert result.ok is True
+
+def test_min_length_fail():
+    result = validate("hi", min_length=100)
+    assert result.ok is False
+
+def test_max_length_pass():
+    result = validate(TEXT, max_length=1000)
+    assert result.ok is True
+
+def test_max_length_fail():
+    result = validate(TEXT, max_length=5)
+    assert result.ok is False
+
+def test_matches_regex_pass():
+    result = validate(TEXT, matches_regex=r"^Summary:")
+    assert result.ok is True
+
+def test_matches_regex_fail():
+    result = validate(TEXT, matches_regex=r"^\d+")
+    assert result.ok is False
+
+def test_not_matches_regex_pass():
+    result = validate(TEXT, not_matches_regex=r"\bBerlin\b")
+    assert result.ok is True
+
+def test_not_matches_regex_fail():
+    result = validate(TEXT, not_matches_regex=r"\bParis\b")
+    assert result.ok is False
+
+def test_multiple_inline_and():
+    result = validate(TEXT, must_contain="Paris", min_length=10, max_length=500)
+    assert result.ok is True
+
+def test_multiple_inline_one_fails():
+    result = validate(TEXT, must_contain="Paris", must_not_contain="Paris")
+    assert result.ok is False
 
 
-# ---- construction ----
+# ---------------------------------------------------------------------------
+# validate() — Rule objects
+# ---------------------------------------------------------------------------
+
+def test_rules_list():
+    rules = [
+        Rule("has_summary", must_contain="Summary:"),
+        Rule("min_length", min_length=10),
+    ]
+    result = validate(TEXT, rules=rules)
+    assert result.ok is True
+    assert result.rule_count == 2
+
+def test_rules_failure():
+    rules = [
+        Rule("no_berlin", must_not_contain="Berlin"),
+        Rule("has_berlin", must_contain="Berlin"),
+    ]
+    result = validate(TEXT, rules=rules)
+    assert result.ok is False
+    assert "has_berlin" in result.failed_rules
+
+def test_rules_and_inline_combined():
+    rules = [Rule("has_summary", must_contain="Summary:")]
+    result = validate(TEXT, rules=rules, min_length=10)
+    assert result.rule_count == 2
+    assert result.ok is True
 
 
-def test_rejects_non_rule_entries():
-    with pytest.raises(TypeError):
-        OutputValidator([lambda _t: True])  # type: ignore[list-item]
+# ---------------------------------------------------------------------------
+# ValidationResult
+# ---------------------------------------------------------------------------
+
+def test_result_failures_list():
+    result = validate("hi", must_contain="Summary:", min_length=100)
+    assert len(result.failures) == 2
+    assert all(isinstance(f, tuple) and len(f) == 2 for f in result.failures)
+
+def test_result_failure_count():
+    result = validate("x", min_length=100, max_length=0)
+    assert result.failure_count == 2
+
+def test_result_failed_rules():
+    rules = [Rule("r1", must_contain="X"), Rule("r2", must_contain="Y")]
+    result = validate("hello", rules=rules)
+    assert set(result.failed_rules) == {"r1", "r2"}
+
+def test_result_bool_true():
+    result = validate(TEXT)
+    assert bool(result) is True
+
+def test_result_bool_false():
+    result = validate("x", must_contain="Z")
+    assert bool(result) is False
+
+def test_result_summary_ok():
+    result = validate(TEXT, must_contain="Paris")
+    assert "passed" in result.summary()
+
+def test_result_summary_fail():
+    result = validate("x", must_contain="Berlin")
+    text = result.summary()
+    assert "failed" in text.lower()
+
+def test_result_text_stored():
+    result = validate(TEXT)
+    assert result.text == TEXT
 
 
-def test_rejects_duplicate_rule_names():
-    with pytest.raises(ValueError):
-        OutputValidator([_always_pass("dup"), _always_pass("dup")])
+# ---------------------------------------------------------------------------
+# Rule.check() directly
+# ---------------------------------------------------------------------------
+
+def test_rule_check_no_failures():
+    r = Rule("r", must_contain="Paris")
+    assert r.check(TEXT) == []
+
+def test_rule_check_failure():
+    r = Rule("r", must_contain="Berlin")
+    failures = r.check(TEXT)
+    assert len(failures) == 1
+
+def test_rule_custom_message():
+    r = Rule("r", must_contain="Berlin", message="City must be Berlin")
+    failures = r.check(TEXT)
+    assert failures[0] == "City must be Berlin"
+
+def test_rule_multiple_checks():
+    r = Rule("r", must_contain="Berlin", min_length=100000)
+    failures = r.check(TEXT)
+    assert len(failures) == 2
 
 
-def test_rules_property_is_a_copy():
-    inner = _always_pass()
-    v = OutputValidator([inner])
-    out = v.rules
-    out.clear()
-    # validator state must be unchanged after mutating the returned list
-    assert len(v.rules) == 1
+# ---------------------------------------------------------------------------
+# Error cases
+# ---------------------------------------------------------------------------
 
+def test_invalid_regex_raises():
+    with pytest.raises(ValidationError, match="invalid regex"):
+        validate(TEXT, matches_regex="[invalid")
 
-# ---- input typing ----
+def test_invalid_not_regex_raises():
+    r = Rule("r", not_matches_regex="[bad")
+    with pytest.raises(ValidationError):
+        r.check(TEXT)
 
+def test_empty_text_min_length():
+    result = validate("", min_length=1)
+    assert result.ok is False
 
-def test_check_rejects_non_string_input():
-    v = OutputValidator([_always_pass()])
-    with pytest.raises(TypeError):
-        v.check(123)  # type: ignore[arg-type]
-
-
-# ---- raise path ----
-
-
-def test_check_or_raise_passes_silently_on_success():
-    v = OutputValidator([_always_pass()])
-    # no return value, no raise
-    assert v.check_or_raise("hi") is None
-
-
-def test_check_or_raise_raises_with_correct_payload():
-    v = OutputValidator(
-        [
-            _always_pass("ok_one"),
-            _always_fail("bad_one", "boom"),
-            _always_fail("bad_two", "kapow"),
-        ]
-    )
-    with pytest.raises(OutputValidationError) as exc:
-        v.check_or_raise("x")
-    err = exc.value
-    assert err.failed_rules == ["bad_one", "bad_two"]
-    assert set(err.details.keys()) == {"ok_one", "bad_one", "bad_two"}
-    assert err.details["bad_one"].message == "boom"
-    # exception message should at least mention the first failure
-    assert "bad_one" in str(err)
-
-
-def test_validation_error_details_are_independent_copies():
-    bad = _always_fail("bad", "boom")
-    v = OutputValidator([bad])
-    with pytest.raises(OutputValidationError) as exc:
-        v.check_or_raise("x")
-    err = exc.value
-    err.failed_rules.append("tampered")
-    err.details["extra"] = RuleResult(False, "x")
-    # subsequent run should not see the tampered fields
-    with pytest.raises(OutputValidationError) as exc2:
-        v.check_or_raise("x")
-    assert exc2.value.failed_rules == ["bad"]
-    assert "extra" not in exc2.value.details
+def test_empty_text_no_rules():
+    result = validate("")
+    assert result.ok is True
