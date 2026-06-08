@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 
 class ValidationError(Exception):
@@ -43,15 +42,19 @@ class Rule:
         flags = 0 if self.case_sensitive else re.IGNORECASE
 
         if self.must_contain is not None:
-            needle = self.must_contain if self.case_sensitive else self.must_contain.lower()
+            needle = (
+                self.must_contain if self.case_sensitive else self.must_contain.lower()
+            )
             haystack = text if self.case_sensitive else text.lower()
             if needle not in haystack:
-                failures.append(
-                    self.message or f"must contain {self.must_contain!r}"
-                )
+                failures.append(self.message or f"must contain {self.must_contain!r}")
 
         if self.must_not_contain is not None:
-            needle = self.must_not_contain if self.case_sensitive else self.must_not_contain.lower()
+            needle = (
+                self.must_not_contain
+                if self.case_sensitive
+                else self.must_not_contain.lower()
+            )
             haystack = text if self.case_sensitive else text.lower()
             if needle in haystack:
                 failures.append(
@@ -75,16 +78,21 @@ class Rule:
                         self.message or f"must match regex {self.matches_regex!r}"
                     )
             except re.error as e:
-                raise ValidationError(f"invalid regex in rule {self.name!r}: {e}") from e
+                raise ValidationError(
+                    f"invalid regex in rule {self.name!r}: {e}"
+                ) from e
 
         if self.not_matches_regex is not None:
             try:
                 if re.search(self.not_matches_regex, text, flags):
                     failures.append(
-                        self.message or f"must not match regex {self.not_matches_regex!r}"
+                        self.message
+                        or f"must not match regex {self.not_matches_regex!r}"
                     )
             except re.error as e:
-                raise ValidationError(f"invalid regex in rule {self.name!r}: {e}") from e
+                raise ValidationError(
+                    f"invalid regex in rule {self.name!r}: {e}"
+                ) from e
 
         return failures
 
@@ -171,11 +179,20 @@ def validate(
         not_matches_regex=not_matches_regex,
         case_sensitive=case_sensitive,
     )
-    # Only add inline rule if any kwargs were given
-    has_inline = any([
-        must_contain, must_not_contain, min_length, max_length,
-        matches_regex, not_matches_regex,
-    ])
+    # Only add the inline rule if any kwargs were given. Use an explicit
+    # ``is not None`` test so falsy-but-meaningful values such as
+    # ``max_length=0`` or ``must_contain=""`` are not silently dropped.
+    has_inline = any(
+        arg is not None
+        for arg in (
+            must_contain,
+            must_not_contain,
+            min_length,
+            max_length,
+            matches_regex,
+            not_matches_regex,
+        )
+    )
     if has_inline:
         all_rules.append(inline)
 

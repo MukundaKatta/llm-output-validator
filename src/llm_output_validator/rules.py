@@ -27,9 +27,7 @@ _PII_PATTERNS: dict[str, re.Pattern[str]] = {
     # US SSN: 3-2-4 digits, separated by - or space. Avoid matching long digit runs.
     "ssn": re.compile(r"(?<!\d)\d{3}[- ]\d{2}[- ]\d{4}(?!\d)"),
     # 13-19 digit credit-card-like sequences, with optional spaces/dashes every 4.
-    "cc": re.compile(
-        r"(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)"
-    ),
+    "cc": re.compile(r"(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)"),
 }
 
 
@@ -39,9 +37,7 @@ _PII_TYPES = frozenset(_PII_PATTERNS.keys())
 # ---- length ----
 
 
-def length(
-    *, min_chars: int | None = None, max_chars: int | None = None
-) -> Rule:
+def length(*, min_chars: int | None = None, max_chars: int | None = None) -> Rule:
     """Pass if `len(text)` is between min_chars and max_chars (inclusive)."""
     if min_chars is not None and min_chars < 0:
         raise ValueError("min_chars must be >= 0 or None")
@@ -61,9 +57,7 @@ def length(
     return Rule(name="length", check=_check)
 
 
-def length_words(
-    *, min_words: int | None = None, max_words: int | None = None
-) -> Rule:
+def length_words(*, min_words: int | None = None, max_words: int | None = None) -> Rule:
     """Pass if the whitespace-split word count is between min and max."""
     if min_words is not None and min_words < 0:
         raise ValueError("min_words must be >= 0 or None")
@@ -116,9 +110,7 @@ def regex_must_not_match(pattern: str | re.Pattern[str]) -> Rule:
 # ---- allowed values ----
 
 
-def allowed_values(
-    values: Iterable[str], *, case_sensitive: bool = True
-) -> Rule:
+def allowed_values(values: Iterable[str], *, case_sensitive: bool = True) -> Rule:
     """Pass if `text` equals one of `values` exactly.
 
     When `case_sensitive=False`, comparison is done with `.casefold()`.
@@ -146,7 +138,9 @@ def allowed_values(
         def _check(text: str) -> RuleResult:
             if text.casefold() in folded:
                 return RuleResult(True)
-            return RuleResult(False, f"{text!r} not in allowed values (case-insensitive)")
+            return RuleResult(
+                False, f"{text!r} not in allowed values (case-insensitive)"
+            )
 
     return Rule(name="allowed_values", check=_check)
 
@@ -209,7 +203,9 @@ def no_pii(types: Iterable[str] | None = None) -> Rule:
         for kind, pat in patterns:
             m = pat.search(text)
             if m is not None:
-                return RuleResult(False, f"contains {kind}-like substring: {m.group(0)!r}")
+                return RuleResult(
+                    False, f"contains {kind}-like substring: {m.group(0)!r}"
+                )
         return RuleResult(True)
 
     return Rule(name="no_pii", check=_check)
@@ -242,7 +238,7 @@ def json_schema(schema: dict[str, Any]) -> Rule:
     except ImportError as e:
         raise ImportError(
             "rules.json_schema requires the optional 'jsonschema' dependency. "
-            "Install with: pip install \"llm-output-validator[schema]\""
+            'Install with: pip install "llm-output-validator[schema]"'
         ) from e
 
     # Validate the schema itself up front so a malformed schema fails loudly
@@ -272,9 +268,7 @@ def json_schema(schema: dict[str, Any]) -> Rule:
 # ---- custom ----
 
 
-def custom(
-    name: str, fn: Callable[[str], bool | RuleResult]
-) -> Rule:
+def custom(name: str, fn: Callable[[str], bool | RuleResult]) -> Rule:
     """Wrap a user function `fn(text) -> bool | RuleResult` as a named Rule."""
     if not isinstance(name, str) or not name:
         raise ValueError("custom rule name must be a non-empty str")

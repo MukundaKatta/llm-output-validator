@@ -61,9 +61,7 @@ class OutputValidationError(Exception):
                 first_msg = f": {first}: {res.message}"
             else:
                 first_msg = f": {first}"
-        super().__init__(
-            f"output failed {len(failed_rules)} rule(s){first_msg}"
-        )
+        super().__init__(f"output failed {len(failed_rules)} rule(s){first_msg}")
 
 
 class OutputValidator:

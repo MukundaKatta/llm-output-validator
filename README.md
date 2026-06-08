@@ -64,6 +64,42 @@ bool(result)           # same as result.ok
 result = validate(text, must_contain="JSON", case_sensitive=True)
 ```
 
+## Composable rule engine
+
+For reusable, named checks you can build an `OutputValidator` from the rule
+factories in `llm_output_validator.rules`:
+
+```python
+from llm_output_validator import OutputValidator, OutputValidationError, rules
+
+validator = OutputValidator([
+    rules.length(min_chars=50, max_chars=2000),
+    rules.starts_with("Summary:"),
+    rules.no_pii(),                       # email / phone / ssn / cc
+    rules.regex_must_not_match(r"(?i)i apologize"),
+])
+
+result = validator.check(response_text)
+if not result.ok:
+    print(result.failed_rules)            # e.g. ["no_pii"]
+    print(result.details["no_pii"].message)
+
+# or raise on failure
+validator.check_or_raise(response_text)   # raises OutputValidationError
+```
+
+Available factories: `length`, `length_words`, `regex_must_match`,
+`regex_must_not_match`, `allowed_values`, `starts_with`, `ends_with`,
+`no_pii`, `json_parseable`, `json_schema` (requires the `schema` extra), and
+`custom` for wrapping your own `fn(text) -> bool`.
+
+## Optional extras
+
+```bash
+pip install "llm-output-validator[schema]"   # enables rules.json_schema
+pip install "llm-output-validator[dev]"       # pytest, ruff, jsonschema
+```
+
 ## License
 
 MIT
