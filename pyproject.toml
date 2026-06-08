@@ -18,7 +18,18 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
 ]
+
+[project.optional-dependencies]
+# Enables rules.json_schema().
+schema = ["jsonschema>=4.0"]
+
+[project.urls]
+Homepage = "https://github.com/MukundaKatta/llm-output-validator"
+Repository = "https://github.com/MukundaKatta/llm-output-validator"
+Issues = "https://github.com/MukundaKatta/llm-output-validator/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
